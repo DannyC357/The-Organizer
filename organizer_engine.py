@@ -206,25 +206,27 @@ class OrganizerEngine:
                 group_root = base_path if group_name == "." else base_path / group_name
 
             for category, file_list in categories.items():
-
-                # Define target directory
-                target_dir = group_root / category
-                
-                # Create directory if it doesn't exist
-                try:
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                except Exception as e:
-                    msg = f"Failed to create directory {target_dir}: {e}"
-                    print(msg)
-                    for file_info in file_list:
+                for file_info in file_list:
+                    src_path = Path(file_info["full_path"])
+                    
+                    # Define target directory for this specific file
+                    if consolidate_mode:
+                        target_dir = base_path / category
+                    else:
+                        relative = file_info.get("relative_root", ".")
+                        target_dir = base_path / category if relative == "." else base_path / relative / category
+                    
+                    # Create directory if it doesn't exist
+                    try:
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                    except Exception as e:
+                        msg = f"Failed to create directory {target_dir}: {e}"
+                        print(msg)
                         operations_log.append((file_info["full_path"], "", False, msg))
                         processed_files += 1
                         if progress_callback:
                             progress_callback(processed_files, total_files)
-                    continue
-
-                for file_info in file_list:
-                    src_path = Path(file_info["full_path"])
+                        continue
                     
                     # Prefix file name with original folder name in consolidate mode to avoid conflicts
                     if consolidate_mode and group_name != ".":
@@ -281,6 +283,7 @@ class OrganizerEngine:
         total_ops = len(operations)
         processed_ops = 0
         undo_log = []
+        dirs_to_clean = set()
         
         # Process in reverse order
         for op in reversed(operations):
@@ -302,11 +305,13 @@ class OrganizerEngine:
                 processed_ops += 1
                 continue
                 
+            op_success = False
             try:
                 if copy_mode:
                     if dest_path.exists() and dest_path.is_file():
                         dest_path.unlink()
                         undo_log.append((str(dest_path), "", True, "Deleted copy"))
+                        op_success = True
                     else:
                         undo_log.append((str(dest_path), "", True, "Copy file already deleted or not found"))
                 else:
@@ -314,15 +319,28 @@ class OrganizerEngine:
                         src_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.move(dest_path, src_path)
                         undo_log.append((str(dest_path), str(src_path), True, "Moved back successfully"))
+                        op_success = True
                     else:
                         undo_log.append((str(dest_path), str(src_path), False, "Organized file not found at destination"))
             except Exception as e:
                 undo_log.append((str(dest_path), str(src_path), False, f"Undo error: {e}"))
                 
+            if op_success:
+                dirs_to_clean.add(dest_path.parent)
+                
             processed_ops += 1
             if progress_callback:
                 progress_callback(processed_ops, total_ops)
                 
+        # Clean up empty directory paths we created
+        for directory in dirs_to_clean:
+            if directory.exists() and directory.is_dir():
+                try:
+                    if not any(directory.iterdir()):
+                        directory.rmdir()
+                except Exception:
+                    pass
+                    
         return undo_log
 
     def undo_folder_export(self, history_data: Dict, progress_callback = None) -> List[Tuple[str, str, bool, str]]:

@@ -928,7 +928,8 @@ class DrumOrganizerApp:
                 if self.layout_mode_var.get() == "consolidated":
                     target_folder = f"[Main] / {category}"
                 else:
-                    target_folder = category
+                    relative = file_info.get("relative_root", ".")
+                    target_folder = category if relative == "." else f"{relative} / {category}"
                 
                 # Insert row
                 item_id = self.files_grid.insert("", "end", values=(
@@ -1296,7 +1297,12 @@ class DrumOrganizerApp:
         self.scan_results[target_group][new_cat].append(file_info)
         
         # Update files grid row
-        target_path = f"[Main] / {new_cat}" if self.layout_mode_var.get() == "consolidated" else new_cat
+        if self.layout_mode_var.get() == "consolidated":
+            target_path = f"[Main] / {new_cat}"
+        else:
+            relative = file_info.get("relative_root", ".") if file_info else "."
+            target_path = new_cat if relative == "." else f"{relative} / {new_cat}"
+            
         self.files_grid.item(tree_item_id, values=(
             filename,
             new_cat,
